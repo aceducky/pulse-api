@@ -7,9 +7,16 @@
     "cf-typegen": "wrangler types --env-interface CloudflareBindings"
   },
   "dependencies": {
-    "hono": "^4.12.16"
+    "@hono/zod-validator": "^0.7.6",
+    "@neondatabase/serverless": "^1.1.0",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.12.16",
+    "zod": "^4.4.1"
   },
   "devDependencies": {
+    "@types/node": "^25.6.0",
+    "drizzle-kit": "^0.31.10",
     "wrangler": "^4.4.0"
   }
 }

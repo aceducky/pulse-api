@@ -1,9 +1,16 @@
-import { Hono } from 'hono'
+import { Hono } from "hono";
+import { monitorRouter } from "./routes/monitor.route";
+import { logger } from "hono/logger";
 
-const app = new Hono()
+const app = new Hono<{ Bindings: CloudflareBindings }>();
+app.use(logger());
 
-app.get('/', (c) => {
-  return c.text('Hello Hono!')
-})
+app.get("/", (c) => {
+  return c.text("Pulse API");
+});
 
-export default app
+app.route("/api/monitors", monitorRouter);
+
+export { AlarmMakerDO } from "./AlarmMakerDO";
+export { RegistryDO } from "./RegistryDO";
+export default app;

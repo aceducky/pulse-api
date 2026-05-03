@@ -1,8 +1,36 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "backend",
+  "name": "pulse",
   "main": "src/index.ts",
-  "compatibility_date": "2026-05-01"
+  "compatibility_date": "2026-05-01",
+  "migrations": [
+    {
+      "new_sqlite_classes": ["AlarmMakerDO", "RegistryDO"],
+      "tag": "v1",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "AlarmMakerDO",
+        "name": "AlarmMakerDO",
+      },
+      {
+        "class_name": "RegistryDO",
+        "name": "RegistryDO",
+      },
+    ],
+  },
+  "rules": [
+    {
+      "type": "Text",
+      "globs": ["**/*.sql"],
+      "fallthrough": true
+    },
+  ],
+  "observability": {
+    "enabled": true,
+  },
   // "compatibility_flags": [
   //   "nodejs_compat"
   // ],

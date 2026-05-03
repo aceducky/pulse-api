@@ -1,6 +1,9 @@
 # prod
 dist/
 
+# temporary files
+tmp/
+
 # dev
 .yarn/
 !.yarn/releases
