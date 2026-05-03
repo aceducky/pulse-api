@@ -1,0 +1,1 @@
+CREATE INDEX "check_logs_monitor_checked_idx" ON "check_logs" USING btree ("monitor_id","checked_at" desc);

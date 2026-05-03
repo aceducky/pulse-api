@@ -1,4 +1,5 @@
-import { pgTable, text, integer, timestamp, uuid } from "drizzle-orm/pg-core";
+import { desc } from "drizzle-orm";
+import { index, pgTable, text, integer, timestamp, uuid } from "drizzle-orm/pg-core";
 
 export const checkLogs = pgTable("check_logs", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -9,4 +10,8 @@ export const checkLogs = pgTable("check_logs", {
   error: text("error"),
   alertTriggered: text("alert_triggered"),
   checkedAt: timestamp("checked_at").notNull().defaultNow(),
+}, (t) => {
+  return [
+    index("check_logs_monitor_checked_idx").on(t.monitorId, desc(t.checkedAt)),
+  ];
 });

@@ -1,77 +1,17 @@
 import { DurableObject } from "cloudflare:workers";
-import z from "zod";
 import { Err, Ok, Result } from "./utils/result";
 import { appError, validationError } from "./utils/errors";
 import { createNeonDb } from "./db/neon";
 import { checkLogs } from "./db/neon/schemas/logs.schema";
-
-export const FREQUENCIES = [
-  "1m",
-  "5m",
-  "10m",
-  "30m",
-  "1h",
-  "6h",
-  "12h",
-  "1d",
-  "3d",
-  "1w",
-  "2w",
-  "1mon",
-] as const;
-export const frequencySchema = z.enum(FREQUENCIES);
-export type Frequency = z.infer<typeof frequencySchema>;
-
-const second = 1000;
-const minute = 60 * second;
-const hour = 60 * minute;
-const day = 24 * hour;
-const week = 7 * day;
-const month = 30 * day;
-
-const FREQUENCY_MAP: Record<Frequency, number> = {
-  "1m": 1 * minute,
-  "5m": 5 * minute,
-  "10m": 10 * minute,
-  "30m": 30 * minute,
-  "1h": 1 * hour,
-  "6h": 6 * hour,
-  "12h": 12 * hour,
-  "1d": 1 * day,
-  "3d": 3 * day,
-  "1w": 1 * week,
-  "2w": 2 * week,
-  "1mon": 1 * month,
-} as const;
-
-const ALERT_STATUSES = ["idle", "triggered", "acknowledged"] as const;
-
-export const urlSchema = z.url().toLowerCase().trim();
-
-export const configSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1, "Name is required"),
-  url: urlSchema,
-  frequency: frequencySchema,
-  lastAlarmAt: z.string().optional().nullable(),
-  nextAlarmAt: z.string().optional().nullable(),
-
-  alertOnLatencyMs: z.number().positive().optional().nullable(),
-  alertOnStatusAbove: z.number().int().min(100).max(599).optional().nullable(),
-  alertOnBodyContains: z.string().min(1).optional().nullable(),
-
-  alertStatus: z.enum(ALERT_STATUSES).default("idle"),
-});
-
-export const inputConfigSchema = configSchema.omit({
-  id: true,
-  lastAlarmAt: true,
-  nextAlarmAt: true,
-  alertStatus: true,
-});
-export type InputConfig = z.infer<typeof inputConfigSchema>;
-
-export type Config = z.infer<typeof configSchema>;
+import {
+  configSchema,
+  inputConfigSchema,
+  FREQUENCY_MAP,
+  type Config,
+  type InputConfig,
+  type Frequency,
+} from "./schemas/monitor.schema";
+import z from "zod";
 
 export class AlarmMakerDO extends DurableObject<CloudflareBindings> {
   constructor(state: DurableObjectState, env: CloudflareBindings) {
@@ -101,17 +41,23 @@ export class AlarmMakerDO extends DurableObject<CloudflareBindings> {
 
     try {
       await this.ctx.storage.setAlarm(alarmAt);
-      this.setConfig({
+      const fullConfig: Config = {
         id: this.ctx.id.toString(),
         ...config,
         nextAlarmAt: new Date(alarmAt).toISOString(),
         alertStatus: "idle",
-      });
+      };
+      this.setConfig(fullConfig);
       console.log(
         "Alarm Created",
         this.ctx.id.toString(),
         new Date(alarmAt).toLocaleTimeString(),
       );
+
+      // Fire an immediate check so there's a log entry right away
+      // instead of the user waiting for the first scheduled alarm
+      await this.runCheck(fullConfig);
+
       return Ok({ msg: "Alarm created successfully" });
     } catch (cause) {
       console.error("Failed to create alarm", cause);
@@ -127,10 +73,19 @@ export class AlarmMakerDO extends DurableObject<CloudflareBindings> {
     }
     const config = configRes.data;
     const frequency = FREQUENCY_MAP[config.frequency];
-    const now = new Date().toISOString();
     const nextAlarmAt = Date.now() + frequency;
 
     await this.ctx.storage.setAlarm(nextAlarmAt);
+    await this.runCheck(config);
+
+    this.setConfig({
+      ...config,
+      nextAlarmAt: new Date(nextAlarmAt).toISOString(),
+    });
+  }
+
+  private async runCheck(config: Config): Promise<void> {
+    const now = new Date().toISOString();
     const checkResult = await this.performCheck(config);
     const alertReason = this.evaluateAlertConditions(config, checkResult);
     let newAlertStatus = config.alertStatus;
@@ -161,11 +116,10 @@ export class AlarmMakerDO extends DurableObject<CloudflareBindings> {
     this.setConfig({
       ...config,
       lastAlarmAt: now,
-      nextAlarmAt: new Date(nextAlarmAt).toISOString(),
       alertStatus: newAlertStatus,
     });
 
-    console.log("ALARM TRIGGERED", now, config.url, checkResult);
+    console.log("CHECK RESULT", now, config.url, checkResult);
   }
 
   async stop(): Promise<Result<{ msg: string }>> {
@@ -183,6 +137,11 @@ export class AlarmMakerDO extends DurableObject<CloudflareBindings> {
     });
     return Ok({ msg: "Alarm stopped successfully" });
   }
+
+  async destroy():Promise<void> {
+    await this.ctx.storage.deleteAll();
+  }
+
   async setFrequency(incomingFrequency: Frequency): Promise<Result<{ msg: string }>> {
     const configRes = await this.getConfig();
     if (!configRes.ok) {
@@ -242,7 +201,7 @@ export class AlarmMakerDO extends DurableObject<CloudflareBindings> {
   private setConfig(config: Config) {
     const parsed = configSchema.safeParse(config);
     if (!parsed.success) {
-      console.error("setConfig validation failed:", parsed.error.flatten());
+      console.error("setConfig validation failed:", z.flattenError(parsed.error));
       throw new Error("Invalid config passed to setConfig");
     }
     this.ctx.storage.kv.put("config", parsed.data);

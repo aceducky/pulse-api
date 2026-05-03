@@ -1,25 +1,11 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { FREQUENCIES } from "../../../schemas/monitor.schema";
 
 const MONITOR_STATUSES = [
   "pending",
   "active",
   "alarm_failed",
   "stopped",
-] as const;
-
-const FREQUENCIES = [
-  "1m",
-  "5m",
-  "10m",
-  "30m",
-  "1h",
-  "6h",
-  "12h",
-  "1d",
-  "3d",
-  "1w",
-  "2w",
-  "1mon",
 ] as const;
 
 export const registry = sqliteTable("registry", {

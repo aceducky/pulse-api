@@ -6,7 +6,7 @@ import migrations from "../drizzle/do_migrations/migrations";
 import { registry } from "./db/do_storage/schemas/registryDo.schema";
 import { Ok, Err, Result } from "./utils/result";
 import { appError } from "./utils/errors";
-import type { Frequency, InputConfig } from "./AlarmMakerDO";
+import type { Frequency, InputConfig } from "./schemas/monitor.schema";
 
 export class RegistryDO extends DurableObject<CloudflareBindings> {
   storage: DurableObjectStorage;
@@ -17,7 +17,7 @@ export class RegistryDO extends DurableObject<CloudflareBindings> {
     this.storage = ctx.storage;
     this.db = drizzle(this.storage, { logger: false });
     ctx.blockConcurrencyWhile(async () => {
-      migrate(this.db, migrations);
+      await migrate(this.db, migrations);
     });
   }
 
@@ -184,16 +184,15 @@ export class RegistryDO extends DurableObject<CloudflareBindings> {
       return Err(appError(404, "notFoundErr", "Monitor not found"));
     }
 
+    const stub = this.env.AlarmMakerDO.get(
+      this.env.AlarmMakerDO.idFromString(id),
+    );
+
     try {
-      const stub = this.env.AlarmMakerDO.get(
-        this.env.AlarmMakerDO.idFromString(id),
-      );
-      await stub.stop();
+      await stub.destroy();
     } catch (e) {
-      console.error(
-        "Failed to stop alarm during removal, proceeding anyway:",
-        e,
-      );
+      console.error("Failed to destroy AlarmMakerDO during removal:", e);
+      return Err(appError(500, "serverErr", "Failed to clean up alarm, monitor not deleted"));
     }
 
     await this.db.delete(registry).where(eq(registry.id, id));
